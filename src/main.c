@@ -1,10 +1,10 @@
 #include "stm32f30x.h"
 
-uint8_t dma_buffer[100];
-const int num_leds = 1;
+uint8_t dma_buffer[2100];
+const int num_leds = 60;
 const uint8_t PERIOD = 59;
-const uint8_t LOW = 16;
-const uint8_t HIGH = 28;
+const uint8_t LOW = 12;
+const uint8_t HIGH = 35;
 const uint8_t RESET_LEN = 50;
 
 void delay(volatile uint64_t delay) {
@@ -30,6 +30,15 @@ void ws2812_set_color(uint8_t led, uint8_t r, uint8_t g, uint8_t b) {
 
 }
 
+void ws2812_set_color_single(uint8_t led, uint32_t c) {
+    volatile uint8_t
+        r = (uint8_t)(c >> 16),
+        g = (uint8_t)(c >> 8),
+        b = (uint8_t)(c);
+
+    ws2812_set_color(led, r, g, b);
+}
+
 uint32_t ws2812_color(uint8_t r, uint8_t b, uint8_t g) {
     return ((uint32_t)r << 16) | ((uint32_t) g << 8) | b;
 }
@@ -43,7 +52,7 @@ void ws2812_clear(void) {
 }
 
 void ws2812_show(void) {
-    uint8_t memaddr;
+    uint16_t memaddr;
     uint16_t buffersize;
 
     buffersize = (num_leds * 24) + RESET_LEN;
@@ -65,6 +74,34 @@ void ws2812_show(void) {
     TIM_Cmd(TIM2, DISABLE);
     DMA_ClearFlag(DMA1_FLAG_TC7);
 }
+
+uint32_t wheel(char pos) {
+    if(pos < 85) {
+        return ws2812_color(pos * 3, 255 - pos * 3, 0);
+    }
+    else if(pos < 170) {
+        pos -= 85;
+        return ws2812_color(255 - pos * 3, 0, pos * 3);
+    }
+    else {
+        pos -= 170;
+        return ws2812_color(0, pos * 3, 255 - pos * 3);
+    }
+}
+
+void rainbow(uint32_t wait) {
+    volatile uint16_t i, j;
+
+    for(j = 0; j < 256 * 5; j++) {
+        for(i = 0; i < num_leds; i++) {
+            ws2812_set_color_single(
+                i, wheel(((i * 256 / num_leds) + j) & 255));
+        }
+        ws2812_show();
+        delay(wait);
+    }
+}
+
 
 void setup_gpio(void)
 {
@@ -97,9 +134,10 @@ void setup_timer(void) {
     TIM_OCInitTypeDef TIM_OCInitStructure;
     TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1;
     TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
-    TIM_OCInitStructure.TIM_Pulse = PERIOD;
+    TIM_OCInitStructure.TIM_Pulse = 0;
     TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High;
     TIM_OC4Init(TIM2, &TIM_OCInitStructure);
+    TIM_OC4PreloadConfig(TIM2, TIM_OCPreload_Enable);
 }
 
 void setup_dma(void) {
@@ -114,7 +152,7 @@ void setup_dma(void) {
     DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralDST;
     DMA_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
     DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;
-    DMA_InitStructure.DMA_BufferSize = PERIOD;
+    DMA_InitStructure.DMA_BufferSize = 1;
     DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Word;
     DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
     DMA_InitStructure.DMA_Mode = DMA_Mode_Normal;
@@ -136,9 +174,7 @@ int main(void) {
 
     ws2812_clear();
     while(1) {
-        ws2812_set_color(0, 1, 0, 1);
-        ws2812_show();
-        delay(200);
+        rainbow(0);
     }
 
     return 0;
